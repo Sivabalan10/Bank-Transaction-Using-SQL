@@ -40,7 +40,7 @@ This project is a Python-based ATM simulation system that performs basic banking
 
 3. **Run the Script**:
     ```sh
-    python atm_simulation.py
+    python main.py
     ```
 
 4. **Follow the On-Screen Instructions**:
