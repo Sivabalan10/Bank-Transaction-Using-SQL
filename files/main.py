@@ -1,199 +1,123 @@
+from flask import Flask, render_template, request, redirect, url_for, flash
 import sqlite3
-import getpass
+import os
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'default_key_if_not_set')
 
 def create_database():
     conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS account_details (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            pan_card TEXT NOT NULL,
-            nominee_name TEXT NOT NULL,
-            balance REAL NOT NULL DEFAULT 1000
-        )
-    ''')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS account_details
+                 (username TEXT PRIMARY KEY, password TEXT, pancard TEXT, nominee TEXT, balance REAL)''')
     conn.commit()
     conn.close()
 
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/create_account', methods=['GET', 'POST'])
 def create_account():
-    username = input("Enter username: ")
-    password = getpass.getpass("Enter password: ")
-    pan_card = input("Enter PAN card number: ")
-    nominee_name = input("Enter nominee name: ")
-    balance = float(input("Enter initial balance: "))
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        pancard = request.form['pancard']
+        nominee = request.form['nominee']
+        balance = 1000.0
 
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    try:
-        cursor.execute('''
-            INSERT INTO account_details (username, password, pan_card, nominee_name, balance)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (username, password, pan_card, nominee_name, balance))
+        conn = sqlite3.connect('bank.db')
+        c = conn.cursor()
+        c.execute('INSERT INTO account_details (username, password, pancard, nominee, balance) VALUES (?, ?, ?, ?, ?)',
+                  (username, password, pancard, nominee, balance))
         conn.commit()
-        print("Account created successfully!")
-    except sqlite3.IntegrityError:
-        print("Username already exists. Please choose a different username.")
-    conn.close()
+        conn.close()
+        flash('Account created successfully!')
+        return redirect(url_for('index'))
+    return render_template('create_account.html')
 
-def check_credentials(username):
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT * FROM account_details WHERE username = ?
-    ''', (username,))
-    account = cursor.fetchone()
-    conn.close()
-    return account
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
 
-def withdraw_money(account):
-    amount = float(input("Enter amount to withdraw: "))
-    password = getpass.getpass("Enter password: ")
-
-    if password != account[2]:
-        print("Incorrect password.")
-        return
-
-    if amount <= 0:
-        print("Invalid amount. Please enter a positive number.")
-        return
-
-    if amount > account[5]:
-        print("Insufficient balance.")
-        return
-
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE account_details SET balance = balance - ? WHERE id = ?
-    ''', (amount, account[0]))
-    conn.commit()
-    conn.close()
-    print(f"{amount} has been withdrawn from your account. Your new balance is {account[5] - amount}")
-
-def check_balance(account):
-    password = getpass.getpass("Enter password: ")
-
-    if password != account[2]:
-        print("Incorrect password.")
-        return
-
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT balance FROM account_details WHERE id = ?
-    ''', (account[0],))
-    balance = cursor.fetchone()[0]
-    conn.close()
-    print(f"Current balance: {balance}")
-
-def change_pin(account):
-    old_password = getpass.getpass("Enter existing password: ")
-
-    if old_password != account[2]:
-        print("Incorrect password.")
-        return
-
-    new_password = getpass.getpass("Enter new password: ")
-    confirm_password = getpass.getpass("Confirm new password: ")
-
-    if new_password != confirm_password:
-        print("Passwords do not match.")
-        return
-
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE account_details SET password = ? WHERE id = ?
-    ''', (new_password, account[0]))
-    conn.commit()
-    conn.close()
-    print("Password changed successfully!")
-
-def view_account_details(account):
-    password = getpass.getpass("Enter password: ")
-
-    if password != account[2]:
-        print("Incorrect password.")
-        return
-
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT * FROM account_details WHERE id = ?
-    ''', (account[0],))
-    account_details = cursor.fetchone()
-    conn.close()
-    print("Account Details:")
-    print(f"Username: {account_details[1]}")
-    print(f"PAN Card: {account_details[3]}")
-    print(f"Nominee Name: {account_details[4]}")
-    print(f"Balance: {account_details[5]}")
-
-def deposit_money(account):
-    amount = float(input("Enter amount to deposit: "))
-    password = getpass.getpass("Enter password: ")
-
-    if password != account[2]:
-        print("Incorrect password.")
-        return
-
-    if amount <= 0:
-        print("Invalid amount. Please enter a positive number.")
-        return
-
-    conn = sqlite3.connect('bank.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE account_details SET balance = balance + ? WHERE id = ?
-    ''', (amount, account[0]))
-    conn.commit()
-    conn.close()
-    print(f"{amount} has been deposited to your account. Your new balance is {account[5] + amount}")
-
-def main():
-    create_database()
-
-    while True:
-        print("\nWelcome to the ATM")
-        print("1. Create Account")
-        print("2. Use Existing Account")
-        choice = input("Choose an option: ")
-
-        if choice == '1':
-            create_account()
-        elif choice == '2':
-            username = input("Enter username: ")
-            account = check_credentials(username)
-            if account:
-                while True:
-                    print("\n1. Withdraw Money")
-                    print("2. Check Balance")
-                    print("3. Change PIN")
-                    print("4. View Account Details")
-                    print("5. Deposit Money")
-                    print("q. Quit")
-                    action = input("Choose an action: ")
-
-                    if action == '1':
-                        withdraw_money(account)
-                    elif action == '2':
-                        check_balance(account)
-                    elif action == '3':
-                        change_pin(account)
-                    elif action == '4':
-                        view_account_details(account)
-                    elif action == '5':
-                        deposit_money(account)
-                    elif action == 'q':
-                        break
-                    else:
-                        print("Invalid choice. Please try again.")
-            else:
-                print("Account not found.")
+        conn = sqlite3.connect('bank.db')
+        c = conn.cursor()
+        c.execute('SELECT * FROM account_details WHERE username=? AND password=?', (username, password))
+        account = c.fetchone()
+        conn.close()
+        if account:
+            return redirect(url_for('account', username=username))
         else:
-            print("Invalid choice. Please try again.")
+            flash('Invalid username or password')
+            return redirect(url_for('login'))
+    return render_template('login.html')
 
-if __name__ == "__main__":
-    main()
+@app.route('/account/<username>', methods=['GET', 'POST'])
+def account(username):
+    conn = sqlite3.connect('bank.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM account_details WHERE username=?', (username,))
+    account = c.fetchone()
+    conn.close()
+    if not account:
+        flash('Account not found')
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        if 'withdraw' in request.form:
+            amount = float(request.form['amount'])
+            if amount <= account[4]:
+                new_balance = account[4] - amount
+                conn = sqlite3.connect('bank.db')
+                c = conn.cursor()
+                c.execute('UPDATE account_details SET balance=? WHERE username=?', (new_balance, username))
+                conn.commit()
+                conn.close()
+                flash('Withdrawal successful!')
+            else:
+                flash('Insufficient balance')
+
+        elif 'deposit' in request.form:
+            amount = float(request.form['amount'])
+            new_balance = account[4] + amount
+            conn = sqlite3.connect('bank.db')
+            c = conn.cursor()
+            c.execute('UPDATE account_details SET balance=? WHERE username=?', (new_balance, username))
+            conn.commit()
+            conn.close()
+            flash('Deposit successful!')
+
+        elif 'change_pin' in request.form:
+            new_password = request.form['new_password']
+            conn = sqlite3.connect('bank.db')
+            c = conn.cursor()
+            c.execute('UPDATE account_details SET password=? WHERE username=?', (new_password, username))
+            conn.commit()
+            conn.close()
+            flash('PIN changed successfully!')
+
+    conn = sqlite3.connect('bank.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM account_details WHERE username=?', (username,))
+    account = c.fetchone()
+    conn.close()
+
+    return render_template('account.html', account=account)
+
+@app.route('/view_account_details/<username>')
+def view_account_details(username):
+    conn = sqlite3.connect('bank.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM account_details WHERE username=?', (username,))
+    account = c.fetchone()
+    conn.close()
+    if not account:
+        flash('Account not found')
+        return redirect(url_for('index'))
+    return render_template('view_account_details.html', account=account)
+
+if __name__ == '__main__':
+    create_database()
+    app.run(debug=True)
